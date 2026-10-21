@@ -23,4 +23,3 @@ if uploaded_file:
     st.dataframe(df, use_container_width=True)
 
     st.write("Available columns:")
-    st.write(list(df.columns))
