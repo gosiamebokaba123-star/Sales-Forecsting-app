@@ -1,307 +1,280 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-from prophet import Prophet
+import plotly.express as px
 
 st.set_page_config(
-    page_title="Sales Intelligence",
+    page_title="Sales Forecasting",
     page_icon="📈",
     layout="wide"
 )
 
-st.title("📈 Sales Intelligence")
-st.caption("Understand your sales. Forecast what comes next.")
+st.title("📈 Sales Forecasting Dashboard")
+st.write("Understand your sales performance and forecast future sales.")
+
 uploaded_file = st.file_uploader(
-    "Upload your sales CSV",
+    "Upload your sales data (CSV)",
     type=["csv"]
 )
 
 if uploaded_file is None:
-    st.info("Upload a CSV containing a date column and a sales column to begin.")
+    st.info(
+        "Upload a CSV containing a date column and a sales column to begin."
+    )
     st.stop()
 
-<<<<<<< HEAD
-    st.write("Available columns:")
-=======
 try:
     df = pd.read_csv(uploaded_file)
 except Exception as e:
     st.error(f"Could not read the CSV: {e}")
     st.stop()
 
-if df.empty:
-    st.error("Your CSV is empty.")
+if df.empty or len(df.columns) < 2:
+    st.error("Your CSV is empty or does not contain enough columns.")
     st.stop()
 
-st.subheader("1. Prepare your data")
+st.subheader("1. Select your data columns")
 
-columns = df.columns.tolist()
+columns = list(df.columns)
 
-# Automatically detect common column names
 date_candidates = [
-    "date", "ds", "day", "order_date", "transaction_date"
+    c for c in columns
+    if any(word in c.lower() for word in ["date", "day", "time"])
 ]
 sales_candidates = [
-    "sales_zar", "sales", "revenue", "total_sales",
-    "amount", "y"
+    c for c in columns
+    if any(word in c.lower() for word in [
+        "sales", "revenue", "amount", "total", "turnover"
+    ])
 ]
 
-def find_column(candidates):
-    for candidate in candidates:
-        for column in columns:
-            if column.lower().strip() == candidate:
-                return column
-    return columns[0]
+date_default = columns.index(date_candidates[0]) if date_candidates else 0
+sales_default = (
+    columns.index(sales_candidates[0])
+    if sales_candidates
+    else min(1, len(columns) - 1)
+)
 
-default_date = find_column(date_candidates)
-default_sales = find_column(sales_candidates)
+col1, col2 = st.columns(2)
 
-left, right = st.columns(2)
-
-with left:
+with col1:
     date_col = st.selectbox(
         "Date column",
         columns,
-        index=columns.index(default_date)
+        index=date_default
     )
 
-with right:
+with col2:
     sales_col = st.selectbox(
-        "Sales / revenue column",
+        "Sales amount column",
         columns,
-        index=columns.index(default_sales)
+        index=sales_default
     )
 
-# Convert selected fields to the correct data types
-data = df[[date_col, sales_col]].copy()
-data.columns = ["ds", "y"]
-
-data["ds"] = pd.to_datetime(data["ds"], errors="coerce")
-
-# Support currency symbols and comma-separated numbers
-data["y"] = pd.to_numeric(
-    data["y"].astype(str)
-    .str.replace(",", "", regex=False)
-    .str.replace("R", "", regex=False)
-    .str.replace(" ", "", regex=False),
-    errors="coerce"
-)
-
-data = data.dropna(subset=["ds", "y"])
-data = data[data["y"] >= 0]
-
-# Combine multiple transactions on the same date
-daily = (
-    data.groupby("ds", as_index=False)["y"]
-    .sum()
-    .sort_values("ds")
-)
-
-if len(daily) < 2:
-    st.error("We need at least two valid dates with sales data.")
+if date_col == sales_col:
+    st.error("Choose different columns for dates and sales.")
     st.stop()
 
-st.success(
-    f"Loaded {len(daily):,} sales days, "
-    f"from {daily['ds'].min().date()} "
-    f"to {daily['ds'].max().date()}."
-)
-
-st.subheader("2. Business overview")
-
-total_sales = daily["y"].sum()
-average_sales = daily["y"].mean()
-best_idx = daily["y"].idxmax()
-best_day = daily.loc[best_idx]
-
-m1, m2, m3 = st.columns(3)
-
-m1.metric("Total sales", f"R{total_sales:,.2f}")
-m2.metric("Average sales per recorded day", f"R{average_sales:,.2f}")
-m3.metric(
-    "Best sales day",
-    f"R{best_day['y']:,.2f}",
-    help=str(best_day["ds"].date())
-)
-
-# Actual sales trend
-actual_fig = go.Figure()
-actual_fig.add_trace(
-    go.Scatter(
-        x=daily["ds"],
-        y=daily["y"],
-        mode="lines",
-        name="Actual sales",
-        line=dict(width=2)
+data = pd.DataFrame({
+    "date": pd.to_datetime(df[date_col], errors="coerce", dayfirst=True),
+    "sales": pd.to_numeric(
+        df[sales_col].astype(str).str.replace(
+            r"[^0-9.\-]", "", regex=True
+        ),
+        errors="coerce"
     )
-)
-actual_fig.update_layout(
-    title="Historical sales trend",
-    xaxis_title="Date",
-    yaxis_title="Sales (R)",
-    hovermode="x unified"
-)
-st.plotly_chart(actual_fig, use_container_width=True)
+})
 
+data = data.dropna(subset=["date", "sales"])
+data = data[data["sales"] >= 0]
+data["date"] = data["date"].dt.normalize()
+
+data = (
+    data.groupby("date", as_index=False)["sales"]
+    .sum()
+    .sort_values("date")
+)
+
+if data.empty:
+    st.error(
+        "No valid records found. Check your selected columns "
+        "and make sure the dates and sales amounts are valid."
+    )
+    st.stop()
+
+st.subheader("2. Sales performance")
+
+total_sales = data["sales"].sum()
+average_sales = data["sales"].mean()
+best_day = data.loc[data["sales"].idxmax()]
+
+k1, k2, k3 = st.columns(3)
+
+k1.metric("Total sales", f"R {total_sales:,.2f}")
+k2.metric("Average sales per recorded day", f"R {average_sales:,.2f}")
+k3.metric(
+    "Best sales day",
+    f"R {best_day['sales']:,.2f}",
+    help=str(best_day["date"].date())
+)
+
+st.caption(
+    f"Showing {len(data):,} recorded dates, from "
+    f"{data['date'].min().date()} to {data['date'].max().date()}."
+)
+
+fig = px.line(
+    data,
+    x="date",
+    y="sales",
+    title="Historical sales",
+    labels={"date": "Date", "sales": "Sales (R)"},
+    markers=True
+)
+fig.update_layout(hovermode="x unified")
+st.plotly_chart(fig, use_container_width=True)
+
+with st.expander("View cleaned sales data"):
+    st.dataframe(data, use_container_width=True)
+
+st.divider()
 st.subheader("3. Forecast future sales")
 
-if len(daily) < 30:
-    st.warning(
-        "You have fewer than 30 recorded sales days. "
-        "The forecast may be unreliable. More history is recommended."
-    )
-
-horizon = st.selectbox(
-    "How far ahead should we forecast?",
+forecast_days = st.selectbox(
+    "Forecast period",
     [7, 30, 90],
     index=1,
-    format_func=lambda days: f"{days} days"
+    format_func=lambda n: f"{n} days"
 )
 
+if len(data) < 2:
+    st.warning("At least two different dates are required to forecast.")
+    st.stop()
+
 if st.button("Generate sales forecast", type="primary"):
-    if daily["ds"].nunique() < 2:
-        st.error("There are not enough distinct dates to forecast.")
-        st.stop()
-
     try:
-        with st.spinner("Training Prophet and generating predictions..."):
-            model_data = daily.rename(
-                columns={"ds": "ds", "y": "y"}
-            )
+        from prophet import Prophet
 
+        forecast_data = data.rename(
+            columns={"date": "ds", "sales": "y"}
+        )
+
+        with st.spinner("Analysing your sales history..."):
             model = Prophet(
                 yearly_seasonality="auto",
-                weekly_seasonality=(
-                    len(daily) >= 14
-                ),
+                weekly_seasonality="auto",
                 daily_seasonality=False
             )
-
-            model.fit(model_data)
+            model.fit(forecast_data)
 
             future = model.make_future_dataframe(
-                periods=horizon,
+                periods=forecast_days,
                 freq="D"
             )
+            prediction = model.predict(future)
 
-            forecast = model.predict(future)
+        future_forecast = prediction[
+            prediction["ds"] > forecast_data["ds"].max()
+        ].copy()
 
-            # Keep only dates after the final recorded sale
-            last_date = daily["ds"].max()
-            future_forecast = forecast[
-                forecast["ds"] > last_date
-            ].head(horizon).copy()
+        future_forecast["yhat"] = future_forecast["yhat"].clip(lower=0)
+        future_forecast["yhat_lower"] = (
+            future_forecast["yhat_lower"].clip(lower=0)
+        )
+        future_forecast["yhat_upper"] = (
+            future_forecast["yhat_upper"].clip(lower=0)
+        )
 
-            if future_forecast.empty:
-                st.error("Prophet did not return future predictions.")
-                st.stop()
-
-            future_forecast["yhat"] = (
-                future_forecast["yhat"].clip(lower=0)
-            )
-            future_forecast["yhat_lower"] = (
-                future_forecast["yhat_lower"].clip(lower=0)
-            )
-            future_forecast["yhat_upper"] = (
-                future_forecast["yhat_upper"].clip(lower=0)
-            )
-
-            st.session_state["forecast_results"] = (
-                future_forecast
-            )
-            st.session_state["forecast_horizon"] = horizon
+        st.session_state["sales_forecast"] = future_forecast[
+            ["ds", "yhat", "yhat_lower", "yhat_upper"]
+        ].copy()
+        st.session_state["forecast_days"] = forecast_days
 
     except Exception as e:
-        st.error(f"Forecast failed: {e}")
+        st.error(f"Forecast could not be generated: {e}")
+        st.info(
+            "Check that Prophet is listed in requirements.txt "
+            "and that your sales data contains valid dates and numbers."
+        )
 
-if "forecast_results" in st.session_state:
-    result = st.session_state["forecast_results"]
-    chosen_horizon = st.session_state["forecast_horizon"]
+if "sales_forecast" in st.session_state:
+    result = st.session_state["sales_forecast"]
 
-    st.markdown("### Your forecast results")
+    st.subheader(
+        f"Your {st.session_state['forecast_days']}-day forecast"
+    )
 
     expected_total = result["yhat"].sum()
-    average_forecast = result["yhat"].mean()
-
     a, b = st.columns(2)
-    a.metric(
-        f"Forecast sales over {chosen_horizon} days",
-        f"R{expected_total:,.2f}"
+    a.metric("Forecast total sales", f"R {expected_total:,.2f}")
+    b.metric("Average forecast per day", f"R {result['yhat'].mean():,.2f}")
+
+    history_plot = data.rename(
+        columns={"date": "Date", "sales": "Sales"}
     )
-    b.metric(
-        "Average predicted daily sales",
-        f"R{average_forecast:,.2f}"
+    history_plot["Type"] = "Actual sales"
+
+    forecast_plot = result.rename(
+        columns={
+            "ds": "Date",
+            "yhat": "Sales",
+            "yhat_lower": "Lower estimate",
+            "yhat_upper": "Upper estimate"
+        }
     )
+    forecast_plot["Type"] = "Forecast"
 
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Scatter(
-            x=daily["ds"],
-            y=daily["y"],
-            mode="lines",
-            name="Historical sales"
-        )
+    chart = px.line(
+        history_plot,
+        x="Date",
+        y="Sales",
+        title="Actual sales and future forecast",
+        labels={"Sales": "Sales (R)"}
     )
-
-    # Confidence interval band
-    fig.add_trace(
-        go.Scatter(
-            x=result["ds"].tolist()
-            + result["ds"].tolist()[::-1],
-            y=result["yhat_upper"].tolist()
-            + result["yhat_lower"].tolist()[::-1],
-            fill="toself",
-            fillcolor="rgba(80, 140, 220, 0.18)",
-            line=dict(color="rgba(255,255,255,0)"),
-            name="Uncertainty range",
-            hoverinfo="skip"
-        )
+    chart.add_scatter(
+        x=forecast_plot["Date"],
+        y=forecast_plot["Sales"],
+        mode="lines",
+        name="Forecast"
     )
-
-    fig.add_trace(
-        go.Scatter(
-            x=result["ds"],
-            y=result["yhat"],
-            mode="lines",
-            name="Predicted sales",
-            line=dict(width=3, dash="dash")
-        )
+    chart.add_scatter(
+        x=forecast_plot["Date"],
+        y=forecast_plot["Upper estimate"],
+        mode="lines",
+        line=dict(width=0),
+        showlegend=False,
+        hoverinfo="skip"
     )
-
-    fig.update_layout(
-        title="Historical sales and future forecast",
-        xaxis_title="Date",
-        yaxis_title="Sales (R)",
-        hovermode="x unified"
+    chart.add_scatter(
+        x=forecast_plot["Date"],
+        y=forecast_plot["Lower estimate"],
+        mode="lines",
+        line=dict(width=0),
+        fill="tonexty",
+        fillcolor="rgba(100, 149, 237, 0.18)",
+        name="Forecast range",
+        hoverinfo="skip"
     )
+    st.plotly_chart(chart, use_container_width=True)
 
-    st.plotly_chart(fig, use_container_width=True)
-
-    export = result[
-        ["ds", "yhat", "yhat_lower", "yhat_upper"]
-    ].rename(
+    download_data = result.rename(
         columns={
             "ds": "date",
-            "yhat": "predicted_sales_zar",
-            "yhat_lower": "lower_estimate_zar",
-            "yhat_upper": "upper_estimate_zar"
+            "yhat": "forecast_sales",
+            "yhat_lower": "lower_estimate",
+            "yhat_upper": "upper_estimate"
         }
     )
 
-    st.markdown("### Forecast details")
-    st.dataframe(export, use_container_width=True)
+    st.dataframe(download_data, use_container_width=True)
 
     st.download_button(
         "Download forecast CSV",
-        data=export.to_csv(index=False).encode("utf-8"),
+        data=download_data.to_csv(index=False).encode("utf-8"),
         file_name="sales_forecast.csv",
         mime="text/csv"
     )
 
-    st.caption(
-        "Forecasts are estimates based on historical patterns, "
-        "not guaranteed sales. Results depend on data quality "
-        "and the amount of history available."
-    )
->>>>>>> 8f0931a (requrements.txt)
+st.caption(
+    "Forecasts are estimates based on historical data, not guarantees "
+    "of future sales. Results depend on data quality and seasonality."
+)
