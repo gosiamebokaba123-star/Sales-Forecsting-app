@@ -133,6 +133,57 @@ st.caption(
     f"Showing {len(data):,} recorded dates, from "
     f"{data['date'].min().date()} to {data['date'].max().date()}."
 )
+# Sales Analyst: plain-English insights
+st.subheader("Sales Analyst")
+st.write("Here is what your sales data tells us.")
+
+if len(data) >= 2:
+    midpoint = max(1, len(data) // 2)
+    first_half_avg = data["sales"].iloc[:midpoint].mean()
+    second_half_avg = data["sales"].iloc[midpoint:].mean()
+
+    if first_half_avg > 0:
+        change_pct = (
+            (second_half_avg - first_half_avg) / first_half_avg
+        ) * 100
+    else:
+        change_pct = 0
+
+    if change_pct > 5:
+        st.success(
+            f"Sales are trending upward. The later period averages "
+            f"{change_pct:.1f}% higher than the earlier period."
+        )
+    elif change_pct < -5:
+        st.warning(
+            f"Sales are trending downward. The later period averages "
+            f"{abs(change_pct):.1f}% lower than the earlier period."
+        )
+    else:
+        st.info("Sales are broadly stable between the two periods.")
+
+    weekday_data = data.copy()
+    weekday_data["day_name"] = weekday_data["date"].dt.day_name()
+    weekday_avg = weekday_data.groupby("day_name")["sales"].mean()
+
+    best_weekday = weekday_avg.idxmax()
+    weakest_weekday = weekday_avg.idxmin()
+
+    st.write(
+        f"**Strongest weekday:** {best_weekday} "
+        f"(average R {weekday_avg.max():,.2f})."
+    )
+    st.write(
+        f"**Weakest weekday:** {weakest_weekday} "
+        f"(average R {weekday_avg.min():,.2f})."
+    )
+
+    st.caption(
+        "Suggestion: compare weaker days with staffing, stock availability "
+        "and promotions before deciding what to change."
+    )
+else:
+    st.info("Upload at least two dates to generate sales insights.")
 
 fig = px.line(
     data,
