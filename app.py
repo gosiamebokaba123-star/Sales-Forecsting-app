@@ -31,48 +31,60 @@ except Exception as e:
 if df.empty or len(df.columns) < 2:
     st.error("Your CSV is empty or does not contain enough columns.")
     st.stop()
-
-st.subheader("1. Select your data columns")
+st.subheader("1. Detecting your sales data")
 
 columns = list(df.columns)
 
+# Find the date column automatically
 date_candidates = [
     c for c in columns
     if any(word in c.lower() for word in ["date", "day", "time"])
 ]
+
+date_col = date_candidates[0] if date_candidates else None
+
+if date_col is None:
+    for c in columns:
+        parsed_dates = pd.to_datetime(df[c], errors="coerce", dayfirst=True)
+        if parsed_dates.notna().mean() >= 0.7:
+            date_col = c
+            break
+
+# Find the sales column automatically
 sales_candidates = [
     c for c in columns
     if any(word in c.lower() for word in [
-        "sales", "revenue", "amount", "total", "turnover"
+        "sales", "revenue", "turnover", "total_sales",
+        "sales_zar", "amount"
     ])
 ]
 
-date_default = columns.index(date_candidates[0]) if date_candidates else 0
-sales_default = (
-    columns.index(sales_candidates[0])
-    if sales_candidates
-    else min(1, len(columns) - 1)
-)
+sales_col = sales_candidates[0] if sales_candidates else None
 
-col1, col2 = st.columns(2)
+if sales_col is None:
+    numeric_candidates = [
+        c for c in columns
+        if c != date_col and
+        pd.to_numeric(
+            df[c].astype(str).str.replace(r"[^0-9.\-]", "", regex=True),
+            errors="coerce"
+        ).notna().mean() >= 0.7
+    ]
+    if numeric_candidates:
+        sales_col = numeric_candidates[0]
 
-with col1:
-    date_col = st.selectbox(
-        "Date column",
-        columns,
-        index=date_default
+if date_col is None or sales_col is None or date_col == sales_col:
+    st.error(
+        "I couldn't reliably identify your date and sales columns. "
+        "Please check that your CSV contains dates and sales amounts."
     )
-
-with col2:
-    sales_col = st.selectbox(
-        "Sales amount column",
-        columns,
-        index=sales_default
-    )
-
-if date_col == sales_col:
-    st.error("Choose different columns for dates and sales.")
+    st.write("Columns found:", columns)
     st.stop()
+
+st.success(
+    f"Automatically detected — Date: **{date_col}** | "
+    f"Sales: **{sales_col}**"
+)
 
 data = pd.DataFrame({
     "date": pd.to_datetime(df[date_col], errors="coerce", dayfirst=True),
@@ -101,7 +113,7 @@ if data.empty:
     )
     st.stop()
 
-st.subheader("2. Sales performance")
+header("2. Sales performance")
 
 total_sales = data["sales"].sum()
 average_sales = data["sales"].mean()
