@@ -113,7 +113,7 @@ if data.empty:
     )
     st.stop()
 
-header("2. Sales performance")
+st.subheader("2. Sales performance")
 
 total_sales = data["sales"].sum()
 average_sales = data["sales"].mean()
