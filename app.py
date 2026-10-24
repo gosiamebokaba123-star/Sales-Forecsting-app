@@ -185,7 +185,52 @@ if len(data) >= 2:
 else:
     st.info("Upload at least two dates to generate sales insights.")
 
-fig = px.line(
+st.write("TEST: Growth sectionreached")
+# Sales growth comparison
+st.subheader("Sales Growth Comparison")
+
+if len(data) >= 4:
+    split_point = len(data) // 2
+    earlier_period = data.iloc[:split_point]
+    later_period = data.iloc[split_point:]
+
+    earlier_total = earlier_period["sales"].sum()
+    later_total = later_period["sales"].sum()
+
+    earlier_avg = earlier_period["sales"].mean()
+    later_avg = later_period["sales"].mean()
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Earlier period sales", f"R {earlier_total:,.2f}")
+    c2.metric("Later period sales", f"R {later_total:,.2f}")
+
+    if earlier_avg > 0:
+        growth = ((later_avg - earlier_avg) / earlier_avg) * 100
+        c3.metric("Average daily sales change", f"{growth:+.1f}%")
+
+        if growth > 5:
+            st.success(
+                "Average daily sales are higher in the later period. "
+                "Check which products, days or promotions may have helped."
+            )
+        elif growth < -5:
+            st.warning(
+                "Average daily sales are lower in the later period. "
+                "Review stock availability, customer traffic and recent changes."
+            )
+        else:
+            st.info(
+                "Average daily sales are relatively stable between the periods."
+            )
+    else:
+        st.info(
+            "A percentage comparison isn't available because the earlier "
+            "period's average sales are zero."
+        )
+else:
+    st.info("Upload at least four recorded dates to compare sales periods.")  
+    
+    fig = px.line(
     data,
     x="date",
     y="sales",
