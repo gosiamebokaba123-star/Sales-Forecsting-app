@@ -228,15 +228,16 @@ if len(data) >= 4:
             "period's average sales are zero."
         )
 else:
-    st.info("Upload at least four recorded dates to compare sales periods.")  
-    
-    fig = px.line(
+    st.info("Upload at least four recorded dates to compare sales periods.")
+
+fig = px.line(
     data,
     x="date",
     y="sales",
     title="Historical sales",
     labels={"date": "Date", "sales": "Sales (R)"},
     markers=True
+)
 )
 fig.update_layout(hovermode="x unified")
 st.plotly_chart(fig, use_container_width=True)
