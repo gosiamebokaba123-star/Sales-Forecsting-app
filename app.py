@@ -238,7 +238,7 @@ fig = px.line(
     labels={"date": "Date", "sales": "Sales (R)"},
     markers=True
 )
-)
+
 fig.update_layout(hovermode="x unified")
 st.plotly_chart(fig, use_container_width=True)
 
