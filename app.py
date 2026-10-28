@@ -185,7 +185,7 @@ if len(data) >= 2:
 else:
     st.info("Upload at least two dates to generate sales insights.")
 
-st.write("TEST: Growth sectionreached")
+
 # Sales growth comparison
 st.subheader("Sales Growth Comparison")
 
