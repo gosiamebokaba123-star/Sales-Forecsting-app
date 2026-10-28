@@ -1,6 +1,245 @@
+import hashlib
+import re
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+
+
+def answer_sales_question(question, data, forecast=None):
+    question = question.strip().lower()
+
+    if not question:
+        return "Enter a question about your sales data to get an answer."
+
+    recommendation_terms = [
+        "advice", "recommend", "suggest", "how can i", "how do i",
+        "improve", "increase", "boost", "grow", "more sales",
+        "ways to",
+    ]
+    if any(term in question for term in recommendation_terms):
+        weekday_data = data.copy()
+        weekday_data["day_name"] = weekday_data["date"].dt.day_name()
+        weekday_average = weekday_data.groupby("day_name")["sales"].mean()
+
+        observations = [
+            f"Total historical sales were R {data['sales'].sum():,.2f} "
+            f"across {len(data):,} recorded dates.",
+            f"Average historical sales were R {data['sales'].mean():,.2f} "
+            "per recorded date.",
+        ]
+        if not weekday_average.empty:
+            strongest_day = weekday_average.idxmax()
+            weakest_day = weekday_average.idxmin()
+            observations.extend([
+                f"{strongest_day} had the highest average recorded sales "
+                f"(R {weekday_average[strongest_day]:,.2f}).",
+                f"{weakest_day} had the lowest average recorded sales "
+                f"(R {weekday_average[weakest_day]:,.2f}).",
+            ])
+
+        limitation = ""
+        if any(term in question for term in [
+            "product", "customer", "category", "store", "region"
+        ]):
+            limitation = (
+                "The uploaded data does not identify products or customers, "
+                "so it cannot show which items or customer groups perform "
+                "best."
+            )
+
+        return (
+            "**What the data shows**\n\n"
+            + "\n\n".join(f"- {item}" for item in observations)
+            + (f"\n\n{limitation}" if limitation else "")
+            + "\n\n**Suggestions to test**\n\n"
+            "**1. Test a targeted offer on the weakest weekday.** "
+            "Compare that weekday's sales with the same weekday in a "
+            "similar pre-test period. Track profit after the offer, where "
+            "possible, to check whether extra sales are worthwhile.\n\n"
+            "**2. Investigate what happens on the strongest weekday.** "
+            "Check stock, opening hours, and promotions for possible ideas "
+            "to trial on other days; the sales data alone does not explain "
+            "why that day is stronger. Compare the trial with a baseline "
+            "from the same weekdays before the change, and track profit "
+            "where possible.\n\n"
+            "**3. Trial one simple add-on or repeat-visit prompt.** "
+            "Use a consistent test period and compare daily sales with a "
+            "similar baseline period. Track the cost of the offer and profit "
+            "where possible; this dataset cannot identify which products or "
+            "customers to target.\n\n"
+            "These are hypotheses to test, not proven causes or guaranteed "
+            "results. Change one thing at a time where practical and compare "
+            "against a relevant baseline."
+        )
+
+    if any(word in question for word in [
+        "forecast", "predict", "prediction", "future", "expected"
+    ]):
+        if forecast is None or forecast.empty:
+            return (
+                "There isn't a forecast for this upload yet. Generate a "
+                "forecast below, then ask about the forecast results."
+            )
+
+        forecast_start = forecast["ds"].min().date()
+        forecast_end = forecast["ds"].max().date()
+        forecast_total = forecast["yhat"].sum()
+        forecast_average = forecast["yhat"].mean()
+        return (
+            f"**Forecast estimate ({forecast_start} to {forecast_end}):** "
+            f"the predicted total is R {forecast_total:,.2f}, averaging "
+            f"R {forecast_average:,.2f} per forecast day. This is a model "
+            "estimate, not historical sales or a guarantee."
+        )
+
+    limited_scope_terms = [
+        "month", "monthly", "weekly", "year", "yearly", "quarter",
+        "product", "customer", "store", "region", "category", "hour",
+        "between", "since", "during", "from ", "last month", "last week",
+        "last year", "last ", "this month", "this week", "this year",
+        "past month", "past week", "past year", "past ",
+    ]
+    month_names = (
+        "january|february|march|april|may|june|july|august|september|"
+        "october|november|december"
+    )
+    is_weekday_question = "weekday" in question or "day of week" in question
+    has_limited_scope = (
+        any(term in question for term in limited_scope_terms)
+        or re.search(rf"\b(?:{month_names})\b", question)
+        or (
+            re.search(r"\bweek\b", question)
+            and not is_weekday_question
+        )
+    )
+
+    if is_weekday_question:
+        if has_limited_scope or any(word in question for word in [
+            "trend", "recent", "lately", "increasing", "declining",
+            "going up", "going down"
+        ]):
+            return (
+                "I can't answer that weekday breakdown reliably for the "
+                "requested time period or trend. I can compare average sales "
+                "by weekday across all recorded dates."
+            )
+
+        weekday_data = data.copy()
+        weekday_data["day_name"] = weekday_data["date"].dt.day_name()
+        weekday_average = weekday_data.groupby("day_name")["sales"].mean()
+        if any(word in question for word in ["weakest", "lowest", "worst"]):
+            weekday = weekday_average.idxmin()
+            label = "weakest"
+        else:
+            weekday = weekday_average.idxmax()
+            label = "strongest"
+        return (
+            f"**Historical fact:** {weekday} was the {label} weekday by "
+            f"average recorded sales, at R {weekday_average[weekday]:,.2f}. "
+            "This uses only recorded dates for each weekday."
+        )
+
+    if has_limited_scope:
+        return (
+            "I can't answer that breakdown reliably. The uploaded data is "
+            "available here as overall recorded daily sales, not as a "
+            "monthly, product, customer, or custom date-range breakdown."
+        )
+
+    if any(word in question for word in [
+        "trend", "recent", "lately", "increasing", "declining",
+        "going up", "going down"
+    ]):
+        if len(data) < 4:
+            return (
+                "There are too few recorded dates to compare recent sales "
+                "reliably. At least four recorded dates are needed."
+            )
+
+        split_at = max(2, len(data) - 7)
+        recent = data.iloc[split_at:]
+        previous = data.iloc[max(0, split_at - 7):split_at]
+        if len(previous) < 2:
+            return (
+                "There aren't enough earlier recorded dates to compare with "
+                "the recent period reliably."
+            )
+
+        recent_average = recent["sales"].mean()
+        previous_average = previous["sales"].mean()
+        recent_range = (
+            f"{recent['date'].min().date()} to {recent['date'].max().date()}"
+        )
+        previous_range = (
+            f"{previous['date'].min().date()} to {previous['date'].max().date()}"
+        )
+        if previous_average == 0:
+            if recent_average == 0:
+                comparison = "Both periods averaged R 0.00 per recorded date."
+            else:
+                comparison = (
+                    "The earlier period averaged R 0.00, so a percentage "
+                    f"change isn't meaningful; the recent average was "
+                    f"R {recent_average:,.2f} per recorded date."
+                )
+        else:
+            change_pct = (
+                (recent_average - previous_average) / previous_average * 100
+            )
+            direction = "higher" if change_pct > 0 else "lower"
+            if change_pct == 0:
+                comparison = "The averages were unchanged."
+            else:
+                comparison = (
+                    f"The recent average was {abs(change_pct):.1f}% "
+                    f"{direction}."
+                )
+        return (
+            f"**Historical trend:** average sales per recorded date were "
+            f"R {previous_average:,.2f} from {previous_range}, compared "
+            f"with R {recent_average:,.2f} from {recent_range}. "
+            f"{comparison} This compares recorded dates, not every "
+            "calendar day."
+        )
+
+    if any(word in question for word in ["weakest", "lowest", "worst"]):
+        weakest = data.loc[data["sales"].idxmin()]
+        return (
+            f"**Historical fact:** the weakest recorded sales day was "
+            f"{weakest['date'].date()}, with sales of "
+            f"R {weakest['sales']:,.2f}."
+        )
+
+    if any(word in question for word in ["best", "strongest", "highest"]):
+        best = data.loc[data["sales"].idxmax()]
+        return (
+            f"**Historical fact:** the best recorded sales day was "
+            f"{best['date'].date()}, with sales of "
+            f"R {best['sales']:,.2f}."
+        )
+
+    if "average" in question or "per day" in question or "daily" in question:
+        return (
+            f"**Historical fact:** average sales were "
+            f"R {data['sales'].mean():,.2f} per recorded date, based on "
+            f"{len(data):,} recorded dates. Missing calendar dates are not "
+            "included in this average."
+        )
+
+    if any(word in question for word in ["total", "sum", "overall", "revenue"]):
+        return (
+            f"**Historical fact:** total sales in the cleaned data are "
+            f"R {data['sales'].sum():,.2f}, across {len(data):,} recorded "
+            "dates."
+        )
+
+    return (
+        "I can't answer that reliably from the available sales data. Try "
+        "asking about total sales, average sales per recorded date, the best "
+        "or weakest recorded day, recent trends, or forecast results."
+    )
+
 
 st.set_page_config(
     page_title="Sales Forecasting",
@@ -112,6 +351,18 @@ if data.empty:
         "and make sure the dates and sales amounts are valid."
     )
     st.stop()
+
+data_fingerprint = hashlib.sha256(
+    pd.util.hash_pandas_object(data, index=False).values.tobytes()
+).hexdigest()
+
+if (
+    "sales_forecast" in st.session_state
+    and st.session_state.get("sales_forecast_data_key") != data_fingerprint
+):
+    st.session_state.pop("sales_forecast", None)
+    st.session_state.pop("sales_forecast_data_key", None)
+    st.session_state.pop("forecast_days", None)
 
 st.subheader("2. Sales performance")
 
@@ -246,6 +497,29 @@ with st.expander("View cleaned sales data"):
     st.dataframe(data, use_container_width=True)
 
 st.divider()
+st.subheader("Ask Your Sales Analyst")
+st.caption(
+    "Ask about the cleaned data shown above. Historical answers use recorded "
+    "sales; forecast answers are clearly labeled estimates. No external AI "
+    "service is used."
+)
+
+with st.form("sales_analyst_form"):
+    analyst_question = st.text_input(
+        "What would you like to know?",
+        placeholder="For example: What were my total sales?",
+    )
+    ask_analyst = st.form_submit_button("Ask")
+
+if ask_analyst:
+    current_forecast = None
+    if (
+        st.session_state.get("sales_forecast_data_key") == data_fingerprint
+    ):
+        current_forecast = st.session_state.get("sales_forecast")
+    st.info(answer_sales_question(analyst_question, data, current_forecast))
+
+st.divider()
 st.subheader("3. Forecast future sales")
 
 forecast_days = st.selectbox(
@@ -296,6 +570,7 @@ if st.button("Generate sales forecast", type="primary"):
         st.session_state["sales_forecast"] = future_forecast[
             ["ds", "yhat", "yhat_lower", "yhat_upper"]
         ].copy()
+        st.session_state["sales_forecast_data_key"] = data_fingerprint
         st.session_state["forecast_days"] = forecast_days
 
     except Exception as e:
@@ -305,7 +580,10 @@ if st.button("Generate sales forecast", type="primary"):
             "and that your sales data contains valid dates and numbers."
         )
 
-if "sales_forecast" in st.session_state:
+if (
+    "sales_forecast" in st.session_state
+    and st.session_state.get("sales_forecast_data_key") == data_fingerprint
+):
     result = st.session_state["sales_forecast"]
 
     st.subheader(
