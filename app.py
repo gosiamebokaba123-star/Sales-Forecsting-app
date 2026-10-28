@@ -1,9 +1,40 @@
 import hashlib
+import math
 import re
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+
+
+def calculate_sales_target(data, improvement_pct):
+    try:
+        improvement_pct = float(improvement_pct)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Improvement percentage must be a number.") from exc
+
+    if not math.isfinite(improvement_pct) or improvement_pct < 0:
+        raise ValueError(
+            "Improvement percentage must be a finite, nonnegative number."
+        )
+    if data.empty or "sales" not in data:
+        raise ValueError("Sales data must contain at least one sales value.")
+
+    sales = pd.to_numeric(data["sales"], errors="coerce")
+    if (
+        sales.isna().any()
+        or not sales.map(math.isfinite).all()
+        or (sales < 0).any()
+    ):
+        raise ValueError("Sales values must be finite and nonnegative.")
+
+    historical_average = sales.mean()
+    target_average = historical_average * (1 + improvement_pct / 100)
+    return {
+        "historical_average": historical_average,
+        "target_average": target_average,
+        "additional_per_date": target_average - historical_average,
+    }
 
 
 def answer_sales_question(question, data, forecast=None):
@@ -495,6 +526,80 @@ st.plotly_chart(fig, use_container_width=True)
 
 with st.expander("View cleaned sales data"):
     st.dataframe(data, use_container_width=True)
+
+st.divider()
+st.subheader("Sales Action Planner")
+st.caption(
+    "Set a planning target based on your cleaned historical sales. "
+    "This is not a forecast or a guarantee of future results."
+)
+improvement_pct = st.number_input(
+    "Target sales improvement (%)",
+    min_value=0.0,
+    value=10.0,
+    step=1.0,
+)
+
+try:
+    sales_target = calculate_sales_target(data, improvement_pct)
+except ValueError as error:
+    st.error(f"Could not calculate the planning target: {error}")
+else:
+    target_current, target_goal, target_gap = st.columns(3)
+    target_current.metric(
+        "Historical average per recorded date",
+        f"R {sales_target['historical_average']:,.2f}",
+    )
+    target_goal.metric(
+        "Target average per recorded date",
+        f"R {sales_target['target_average']:,.2f}",
+    )
+    target_gap.metric(
+        "Additional revenue needed per recorded date",
+        f"R {sales_target['additional_per_date']:,.2f}",
+    )
+
+    weekday_data = data.assign(day_name=data["date"].dt.day_name())
+    weekday_average = weekday_data.groupby("day_name")["sales"].mean()
+    weakest_weekday = weekday_average.idxmin()
+
+    st.markdown(
+        "**Planning target:** the target average is "
+        f"{improvement_pct:g}% above the historical average per recorded "
+        "date. It is not a Prophet forecast or a guarantee."
+    )
+    if sales_target["historical_average"] == 0:
+        st.info(
+            "A percentage increase on a zero historical average remains "
+            "zero. Set an absolute revenue goal separately if you need a "
+            "positive target."
+        )
+    st.markdown("**Three experiments to test**")
+    st.markdown(
+        f"1. **Try a limited offer on {weakest_weekday}, the lowest-average "
+        f"recorded weekday.** Compare sales per recorded date on that "
+        f"weekday with a comparable pre-test baseline. A target to aim for "
+        f"is at least R {sales_target['target_average']:,.2f} per recorded "
+        "date during the test."
+    )
+    st.markdown(
+        "2. **Test a simple add-on or bundle prompt.** Compare average sales "
+        "per recorded date during the test with a comparable baseline; "
+        f"measure success by reaching at least R "
+        f"{sales_target['target_average']:,.2f} per recorded date."
+    )
+    st.markdown(
+        "3. **Test a repeat-visit reminder.** Compare average sales per "
+        "recorded date during the test with a comparable baseline; "
+        f"measure success by reaching at least R "
+        f"{sales_target['target_average']:,.2f} per recorded date."
+    )
+    st.caption(
+        "These experiments are hypotheses, not proven explanations or "
+        "guaranteed results. The uploaded data does not show product, "
+        "customer, or profit details. Track costs and profit separately "
+        "where possible, and compare similar recorded dates."
+    )
 
 st.divider()
 st.subheader("Ask Your Sales Analyst")
