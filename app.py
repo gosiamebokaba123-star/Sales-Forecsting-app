@@ -1109,14 +1109,6 @@ elif selected_page == "Sales Analyst":
 
     st.markdown("#### Ask your own question")
 
-    with st.form("sales_analyst_form"):
-        analyst_question = st.text_input(
-            "Your question",
-            placeholder="Ask anything about your recorded sales...",
-            label_visibility="collapsed",
-            key="analyst_question_input",
-        )
-        st.markdown("### Example questions")
     example_columns = st.columns(3)
     example_columns[0].markdown("- What were my total sales?\n- Which day was weakest?")
     example_columns[1].markdown("- What is my recent trend?\n- Which weekday is strongest?")
