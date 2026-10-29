@@ -1074,7 +1074,49 @@ elif selected_page == "Sales Analyst":
         "Ask a question about this dataset. Answers are generated locally from "
         "recorded sales and any forecast already generated; no external AI service is used."
     )
-    st.markdown("### Example questions")
+    st.markdown("### Sales Intelligence Assistant")
+    st.markdown(
+        "Understand your performance, discover trends, and decide "
+        "what to do next using your recorded sales data."
+    )
+
+    st.markdown("#### What would you like to understand?")
+
+    example_questions = [
+        ("How is my business performing?", "performance"),
+        ("When are my sales weakest?", "weakest"),
+        ("Are my sales growing or declining?", "trend"),
+        ("Which days perform best?", "weekday"),
+        ("What is my forecast telling me?", "forecast"),
+        ("How can I improve sales?", "improve"),
+    ]
+
+    if "analyst_question_input" not in st.session_state:
+        st.session_state["analyst_question_input"] = ""
+
+    for row_start in range(0, len(example_questions), 2):
+        question_columns = st.columns(2)
+
+        for offset, (question, question_id) in enumerate(
+            example_questions[row_start:row_start + 2]
+        ):
+            if question_columns[offset].button(
+                question,
+                key=f"analyst_example_{question_id}",
+                use_container_width=True,
+            ):
+                st.session_state["analyst_question_input"] = question
+
+    st.markdown("#### Ask your own question")
+
+    with st.form("sales_analyst_form"):
+        analyst_question = st.text_input(
+            "Your question",
+            placeholder="Ask anything about your recorded sales...",
+            label_visibility="collapsed",
+            key="analyst_question_input",
+        )
+        st.markdown("### Example questions")
     example_columns = st.columns(3)
     example_columns[0].markdown("- What were my total sales?\n- Which day was weakest?")
     example_columns[1].markdown("- What is my recent trend?\n- Which weekday is strongest?")
